@@ -1,5 +1,7 @@
 #include <pebble.h>
-
+#include "bg_randcol.h"
+#include "bg_rainbow.h"
+  
 #define COLORS       true
 #define ANTIALIASING true
 
@@ -8,6 +10,13 @@
 
 #define ANIMATION_DURATION 500
 #define ANIMATION_DELAY    600
+
+typedef enum {
+  background_type_none,
+  background_type_random_color,
+  background_type_rainbow
+} background_type_t;
+
 
 typedef struct {
   int hours;
@@ -19,8 +28,10 @@ static Layer *s_canvas_layer;
 
 static GPoint s_center;
 static Time s_last_time, s_anim_time;
-static int s_radius = 0, s_anim_hours_60 = 0, s_color_channels[3];
+static int s_radius = 0;
 static bool s_animating = false;
+
+static background_type_t s_background_type = background_type_rainbow;
 
 /*************************** AnimationImplementation **************************/
 
@@ -46,8 +57,30 @@ static void animate(int duration, int delay, AnimationImplementation *implementa
   }
   animation_schedule(anim);
 }
+/** Background updater **/
 
+static
+void bg_update_time(struct tm *tick_time, TimeUnits changed)
+{
+  if( s_background_type == background_type_random_color ) {
+    bg_randcol_update_time(tick_time, changed);
+  } else if ( s_background_type == background_type_rainbow ) {
+    bg_rainbow_update_time(tick_time, changed);
+  } 
+}
+
+static
+void bg_update_layer(Layer *layer, GContext *ctx)
+{
+  // Color background?
+  if( s_background_type == background_type_random_color ) {
+    bg_randcol_update_layer(layer, ctx);
+  } else if ( s_background_type == background_type_rainbow ) {
+    bg_rainbow_update_layer(layer, ctx);
+  }    
+}
 /************************************ UI **************************************/
+
 
 static void tick_handler(struct tm *tick_time, TimeUnits changed) {
   // Store time
@@ -55,10 +88,8 @@ static void tick_handler(struct tm *tick_time, TimeUnits changed) {
   s_last_time.hours -= (s_last_time.hours > 12) ? 12 : 0;
   s_last_time.minutes = tick_time->tm_min;
 
-  for(int i = 0; i < 3; i++) {
-    s_color_channels[i] = rand() % 256;
-  }
-
+  bg_update_time(tick_time, changed);
+    
   // Redraw
   if(s_canvas_layer) {
     layer_mark_dirty(s_canvas_layer);
@@ -70,19 +101,18 @@ static int hours_to_minutes(int hours_out_of_12) {
 }
 
 static void update_proc(Layer *layer, GContext *ctx) {
-  // Color background?
-  if(COLORS) {
-    graphics_context_set_fill_color(ctx, GColorFromRGB(s_color_channels[0], s_color_channels[1], s_color_channels[2]));
-    graphics_fill_rect(ctx, GRect(0, 0, 144, 168), 0, GCornerNone);
-  }
+#define STROKE_WIDTH_HANDS  4
+#define STROKE_WIDTH_HANDEND_SYMBOL  2
+  
+  bg_update_layer(layer, ctx);
 
   graphics_context_set_stroke_color(ctx, GColorBlack);
-  graphics_context_set_stroke_width(ctx, 4);
+  graphics_context_set_stroke_width(ctx, STROKE_WIDTH_HANDS);
 
   graphics_context_set_antialiased(ctx, ANTIALIASING);
 
   // White clockface
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, GColorWhite );
   graphics_fill_circle(ctx, s_center, s_radius);
 
   // Draw outline
@@ -115,9 +145,24 @@ static void update_proc(Layer *layer, GContext *ctx) {
   // Draw hands with positive length only
   if(s_radius > 2 * HAND_MARGIN) {
     graphics_draw_line(ctx, s_center, hour_hand);
+    graphics_context_set_stroke_width(ctx, STROKE_WIDTH_HANDEND_SYMBOL);
+
+    graphics_fill_circle(ctx, hour_hand, s_radius / 6);
+    graphics_draw_circle(ctx, hour_hand, s_radius / 6);
+    graphics_context_set_stroke_width(ctx, STROKE_WIDTH_HANDS);
+
   } 
   if(s_radius > HAND_MARGIN) {
     graphics_draw_line(ctx, s_center, minute_hand);
+    GRect rect;
+    rect.size.w = s_radius / 3;
+    rect.size.h = rect.size.w;
+    rect.origin = minute_hand;
+    rect.origin.x -= rect.size.w /2;
+    rect.origin.y -= rect.size.h /2;
+    graphics_context_set_stroke_width(ctx, STROKE_WIDTH_HANDEND_SYMBOL);
+    graphics_fill_rect(ctx, rect, 0, GCornerNone );
+    graphics_draw_rect(ctx, rect);
   }
 }
 

@@ -3,14 +3,14 @@
     "capabilities": [
         ""
     ],
-    "companyName": "Chris Lewis",
-    "longName": "KS Original",
+    "companyName": "Weird Meetup",
+    "longName": "Weird Meetup Pride",
     "projectType": "native",
     "resources": {
         "media": []
     },
     "sdkVersion": "3",
-    "shortName": "KS Original",
+    "shortName": "Weird Meetup Pride",
     "targetPlatforms": [
         "basalt"
     ],
