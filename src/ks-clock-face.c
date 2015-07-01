@@ -1,16 +1,19 @@
 #include <pebble.h>
 #include "bg_randcol.h"
 #include "bg_rainbow.h"
+#include "wt_ticks_normal.h"
   
 #define COLORS       true
 #define ANTIALIASING true
 
 #define HAND_MARGIN  10
-#define FINAL_RADIUS 55
+#define FINAL_RADIUS 60
 
 #define ANIMATION_DURATION 500
 #define ANIMATION_DELAY    600
 
+#define TAP_COUNTDOWN_MAX  8
+  
 typedef enum {
   background_type_none,
   background_type_random_color,
@@ -21,6 +24,7 @@ typedef enum {
 typedef struct {
   int hours;
   int minutes;
+  int seconds;
 } Time;
 
 static Window *s_main_window;
@@ -32,6 +36,23 @@ static int s_radius = 0;
 static bool s_animating = false;
 
 static background_type_t s_background_type = background_type_rainbow;
+static bool s_show_details = false;
+static wt_ctx_t wt_ctx;
+static int s_tap_countdown = 0;
+
+static void tick_handler(struct tm *tick_time, TimeUnits changed);
+
+
+/** Tap **/
+
+static void tap_handler(AccelAxisType axis, int32_t direction) {
+  s_show_details = true;
+  layer_mark_dirty(s_canvas_layer);
+  
+  s_tap_countdown = TAP_COUNTDOWN_MAX;
+  tick_timer_service_unsubscribe();
+  tick_timer_service_subscribe(SECOND_UNIT, tick_handler);  
+}
 
 /*************************** AnimationImplementation **************************/
 
@@ -87,6 +108,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits changed) {
   s_last_time.hours = tick_time->tm_hour;
   s_last_time.hours -= (s_last_time.hours > 12) ? 12 : 0;
   s_last_time.minutes = tick_time->tm_min;
+  s_last_time.seconds = tick_time->tm_sec;
 
   bg_update_time(tick_time, changed);
     
@@ -94,6 +116,17 @@ static void tick_handler(struct tm *tick_time, TimeUnits changed) {
   if(s_canvas_layer) {
     layer_mark_dirty(s_canvas_layer);
   }
+
+  if ( s_tap_countdown > 0 ) {
+    s_tap_countdown--;
+    if ( s_tap_countdown == 0 ) {
+      s_show_details = false;
+      tick_timer_service_unsubscribe();
+      tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);        
+    }
+  }
+
+
 }
 
 static int hours_to_minutes(int hours_out_of_12) {
@@ -117,7 +150,29 @@ static void update_proc(Layer *layer, GContext *ctx) {
 
   // Draw outline
   graphics_draw_circle(ctx, s_center, s_radius);
+  
+  if ( s_show_details ) {    
+    wt_draw(&wt_ctx, ctx, s_radius, s_center);
+  }
 
+  if ( s_show_details ) {    
+    /* second hand */
+    float second_angle = TRIG_MAX_ANGLE * s_last_time.seconds / 60;
+    GPoint second_hand = (GPoint) {
+      .x = (int16_t)(sin_lookup(second_angle) * (int32_t)(s_radius - HAND_MARGIN) / TRIG_MAX_RATIO) + s_center.x,
+      .y = (int16_t)(-cos_lookup(second_angle) * (int32_t)(s_radius - HAND_MARGIN) / TRIG_MAX_RATIO) + s_center.y,
+    };
+  
+    graphics_context_set_stroke_color(ctx, GColorRed);
+    graphics_draw_line(ctx, s_center, second_hand);
+    graphics_context_set_stroke_width(ctx, STROKE_WIDTH_HANDS);
+
+  }
+
+  graphics_context_set_stroke_color(ctx, GColorBlack);
+  graphics_context_set_fill_color(ctx, GColorWhite );
+  graphics_context_set_stroke_width(ctx, STROKE_WIDTH_HANDS);
+  
   // Don't use current time while animating
   Time mode_time = (s_animating) ? s_anim_time : s_last_time;
 
@@ -164,6 +219,8 @@ static void update_proc(Layer *layer, GContext *ctx) {
     graphics_fill_rect(ctx, rect, 0, GCornerNone );
     graphics_draw_rect(ctx, rect);
   }
+  
+  
 }
 
 static void window_load(Window *window) {
@@ -226,10 +283,20 @@ static void init() {
     .update = hands_update
   };
   animate(2 * ANIMATION_DURATION, ANIMATION_DELAY, &hands_impl, true);
+  
+  // Tap
+  accel_tap_service_subscribe(tap_handler); 
+  
+
+  wt_init(&wt_ctx, WT_TICKS_NORMAL);
+  
 }
 
 static void deinit() {
   window_destroy(s_main_window);
+  
+  accel_tap_service_unsubscribe();
+  wt_deinit(&wt_ctx);
 }
 
 int main() {
