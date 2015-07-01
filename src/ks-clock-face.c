@@ -46,7 +46,6 @@ static void tick_handler(struct tm *tick_time, TimeUnits changed);
 /** Tap **/
 
 static void tap_handler(AccelAxisType axis, int32_t direction) {
-  s_show_details = true;
   layer_mark_dirty(s_canvas_layer);
   
   s_tap_countdown = TAP_COUNTDOWN_MAX;
@@ -111,13 +110,13 @@ static void tick_handler(struct tm *tick_time, TimeUnits changed) {
   s_last_time.seconds = tick_time->tm_sec;
 
   bg_update_time(tick_time, changed);
-    
-  // Redraw
-  if(s_canvas_layer) {
-    layer_mark_dirty(s_canvas_layer);
-  }
-
+  
   if ( s_tap_countdown > 0 ) {
+    /* just begun showing details. tm_sec is safe to be drawn */
+    if ( s_tap_countdown == TAP_COUNTDOWN_MAX ) {
+      s_show_details = true;
+    }  
+  
     s_tap_countdown--;
     if ( s_tap_countdown == 0 ) {
       s_show_details = false;
@@ -125,6 +124,13 @@ static void tick_handler(struct tm *tick_time, TimeUnits changed) {
       tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);        
     }
   }
+
+  
+  // Redraw
+  if(s_canvas_layer) {
+    layer_mark_dirty(s_canvas_layer);
+  }
+
 
 
 }
